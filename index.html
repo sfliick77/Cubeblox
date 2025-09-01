@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Jogo Mundo Aberto - Controles Corrigidos com Rotação</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #87CEEB; /* Ciano para simular dia */ }
+    canvas { display: block; }
+    .info-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-family: Arial, sans-serif;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 100;
+    }
+    .audio-controls {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 100;
+    }
+    .audio-controls button {
+      background: #444;
+      border: none;
+      color: white;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .audio-controls button:hover {
+      background: #666;
+    }
+    .audio-controls input[type="range"] {
+      width: 80px;
+    }
+  </style>
+</head>
+<body>
+  <div class="info-panel">
+    <p>Jogador 1 (Vermelho): WASD para mover, Espaço para pular</p>
+    <p>Jogador 2 (Azul): Setas para mover, Enter para pular</p>
+  </div>
+
+  <div class="audio-controls">
+    <button id="playPauseBtn">▶</button>
+    <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5">
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.min.js"></script>
+
+  <script>
+    // Configuração do áudio
+    const audio = new Audio('https://github.com/sfliick77/M-sica-tycon/raw/main/20%20minutes%20and%2050%20seconds%20of%20nostalgic%20roblox%20songs(MP3_160K).mp3');
+    audio.loop = true;
+    audio.volume = 0.5;
+    
+    // Controles de áudio
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+    
+    let isPlaying = false;
+    
+    playPauseBtn.addEventListener('click', () => {
+      if (isPlaying) {
+        audio.pause();
+        playPauseBtn.textContent = '▶';
+      } else {
+        audio.play().catch(e => {
+          console.log('Reprodução de áudio precisa de interação do usuário:', e);
+          playPauseBtn.textContent = '▶';
+          isPlaying = false;
+        });
+        playPauseBtn.textContent = '⏸';
+      }
+      isPlaying = !isPlaying;
+    });
+    
+    volumeSlider.addEventListener('input', () => {
+      audio.volume = volumeSlider.value;
+    });
+    
+    // Iniciar áudio após primeira interação do usuário
+    document.addEventListener('keydown', initAudio, { once: true });
+    document.addEventListener('click', initAudio, { once: true });
+    
+    function initAudio() {
+      if (!isPlaying) {
+        audio.play().then(() => {
+          isPlaying = true;
+          playPauseBtn.textContent = '⏸';
+        }).catch(e => {
+          console.log('Reprodução de áudio não autorizada:', e);
+        });
+      }
+    }
+
+    // Cena e renderizador
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB); // Ciano para o fundo
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Luz (aumentada para simular dia)
+    const light = new THREE.DirectionalLight(0xffffff, 1.2);
+    light.position.set(50, 100, 50).normalize();
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x888888)); // Luz ambiente aumentada
+
+    // Mapa
+    const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    scene.add(ground);
+
+    // Jogadores
+    const player1 = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20), new THREE.MeshLambertMaterial({ color: 0xff0000 }));
+    const player2 = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20), new THREE.MeshLambertMaterial({ color: 0x0000ff }));
+    player1.position.set(-50, 10, 0);
+    player2.position.set(50, 10, 0);
+    player1.userData.velocity = new THREE.Vector3(0, 0, 0);
+    player2.userData.velocity = new THREE.Vector3(0, 0, 0);
+    player1.userData.onGround = true;
+    player2.userData.onGround = true;
+    player1.userData.direction = new THREE.Vector3(0, 0, -1); // Direção inicial
+    player2.userData.direction = new THREE.Vector3(0, 0, -1); // Direção inicial
+    player1.userData.size = new THREE.Vector3(20, 20, 20); // Tamanho para colisão
+    player2.userData.size = new THREE.Vector3(20, 20, 20); // Tamanho para colisão
+    scene.add(player1);
+    scene.add(player2);
+
+    // Casas
+    function criarCasa(x, z) {
+      const casa = new THREE.Mesh(new THREE.BoxGeometry(80, 60, 80), new THREE.MeshLambertMaterial({ color: 0x8B4513 }));
+      casa.position.set(x, 30, z);
+      casa.userData.size = new THREE.Vector3(80, 60, 80); // Tamanho para colisão
+      casa.userData.isStatic = true; // Marcar como objeto estático
+      scene.add(casa);
+      return casa;
+    }
+    const casas = [
+      criarCasa(200, 200),
+      criarCasa(-300, 100),
+      criarCasa(150, -250),
+      criarCasa(-400, -300)
+    ];
+
+    // Obstáculos
+    function criarObstaculo(x, z) {
+      const obs = new THREE.Mesh(new THREE.BoxGeometry(50, 50, 50), new THREE.MeshLambertMaterial({ color: 0x5555ff }));
+      obs.position.set(x, 25, z);
+      obs.userData.size = new THREE.Vector3(50, 50, 50); // Tamanho para colisão
+      obs.userData.isStatic = true; // Marcar como objeto estático
+      scene.add(obs);
+      return obs;
+    }
+    const obstaculos = [
+      criarObstaculo(0, 300),
+      criarObstaculo(-200, -200),
+      criarObstaculo(300, -100)
+    ];
+
+    // Bola com física melhorada
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(30, 32, 32), new THREE.MeshLambertMaterial({ color: 0xffff00 }));
+    ball.position.set(0, 30, 0);
+    scene.add(ball);
+    ball.userData.velocity = new THREE.Vector3(0, 0, 0);
+    ball.userData.angularVelocity = new THREE.Vector3(0, 0, 0);
+    ball.userData.radius = 30; // Raio para colisão
+
+    // Lista de todos os objetos com colisão
+    const collidableObjects = [ground, ...casas, ...obstaculos, ball];
+
+    // Câmeras - Modificadas para estilo Roblox (atrás e acima)
+    const camera1 = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight/2), 0.1, 2000);
+    const camera2 = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight/2), 0.1, 2000);
+
+    // Movimentação
+    const keys = {};
+    window.addEventListener("keydown", (e) => { 
+      keys[e.key] = true; 
+      // Impede rolagem da página com teclas de seta e espaço
+      if([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+      }
+    });
+    window.addEventListener("keyup", (e) => { keys[e.key] = false; });
+
+    const speed = 57; // Velocidade aumentada de 5 para 15
+    const jumpForce = 50;
+    const gravity = 0.8;
+
+    // Sistema de colisão entre dois objetos AABB
+    function checkAABBCollision(obj1, obj2) {
+      const pos1 = obj1.position;
+      const pos2 = obj2.position;
+      
+      // Para objetos com propriedade size (caixas)
+      if (obj1.userData.size && obj2.userData.size) {
+        const size1 = obj1.userData.size;
+        const size2 = obj2.userData.size;
+        
+        return (
+          pos1.x - size1.x/2 < pos2.x + size2.x/2 &&
+          pos1.x + size1.x/2 > pos2.x - size2.x/2 &&
+          pos1.y - size1.y/2 < pos2.y + size2.y/2 &&
+          pos1.y + size1.y/2 > pos2.y - size2.y/2 &&
+          pos1.z - size1.z/2 < pos2.z + size2.z/2 &&
+          pos1.z + size1.z/2 > pos2.z - size2.z/2
+        );
+      }
+      
+      // Para esfera vs caixa (bola vs outros objetos)
+      if (obj1.userData.radius && obj2.userData.size) {
+        const radius = obj1.userData.radius;
+        const size = obj2.userData.size;
+        const boxMin = new THREE.Vector3(
+          pos2.x - size.x/2,
+          pos2.y - size.y/2,
+          pos2.z - size.z/2
+        );
+        const boxMax = new THREE.Vector3(
+          pos2.x + size.x/2,
+          pos2.y + size.y/2,
+          pos2.z + size.z/2
+        );
+        
+        // Encontrar o ponto mais próximo da esfera na caixa
+        const closestPoint = new THREE.Vector3(
+          Math.max(boxMin.x, Math.min(pos1.x, boxMax.x)),
+          Math.max(boxMin.y, Math.min(pos1.y, boxMax.y)),
+          Math.max(boxMin.z, Math.min(pos1.z, boxMax.z))
+        );
+        
+        // Calcular a distância entre o ponto mais próximo e o centro da esfera
+        const distance = closestPoint.distanceTo(pos1);
+        
+        return distance < radius;
+      }
+      
+      return false;
+    }
+
+    // Resolver colisão entre jogador e objetos
+    function resolvePlayerCollision(player, object, delta) {
+      if (object === ground) {
+        // Colisão com o chão
+        if (player.position.y <= 10) {
+          player.position.y = 10;
+          player.userData.velocity.y = 0;
+          player.userData.onGround = true;
+        }
+        return;
+      }
+      
+      // Para outros objetos (casas, obstáculos)
+      const playerSize = player.userData.size;
+      const objectSize = object.userData.size;
+      
+      // Calcular sobreposição em cada eixo
+      const dx = (playerSize.x/2 + objectSize.x/2) - Math.abs(player.position.x - object.position.x);
+      const dy = (playerSize.y/2 + objectSize.y/2) - Math.abs(player.position.y - object.position.y);
+      const dz = (playerSize.z/2 + objectSize.z/2) - Math.abs(player.position.z - object.position.z);
+      
+      // Encontrar o eixo de menor penetração
+      if (dx > 0 && dy > 0 && dz > 0) {
+        if (dx < dy && dx < dz) {
+          // Colisão no eixo X
+          if (player.position.x < object.position.x) {
+            player.position.x -= dx;
+          } else {
+            player.position.x += dx;
+          }
+          player.userData.velocity.x = 0;
+        } else if (dy < dx && dy < dz) {
+          // Colisão no eixo Y
+          if (player.position.y < object.position.y) {
+            player.position.y -= dy;
+            player.userData.velocity.y = 0;
+            if (dy > 0.1) player.userData.onGround = true;
+          } else {
+            player.position.y += dy;
+            player.userData.velocity.y = 0;
+          }
+        } else {
+          // Colisão no eixo Z
+          if (player.position.z < object.position.z) {
+            player.position.z -= dz;
+          } else {
+            player.position.z += dz;
+          }
+          player.userData.velocity.z = 0;
+        }
+      }
+    }
+
+    function movePlayers(delta) {
+      // Player 1 - WASD + Espaço para pular
+      if (keys["w"]) {
+        player1.userData.velocity.z = -speed;
+        player1.userData.direction.set(0, 0, -1);
+      } else if (keys["s"]) {
+        player1.userData.velocity.z = speed;
+        player1.userData.direction.set(0, 0, 1);
+      } else {
+        player1.userData.velocity.z = 0;
+      }
+      
+      if (keys["a"]) {
+        player1.userData.velocity.x = -speed;
+        player1.userData.direction.set(-1, 0, 0);
+      } else if (keys["d"]) {
+        player1.userData.velocity.x = speed;
+        player1.userData.direction.set(1, 0, 0);
+      } else {
+        player1.userData.velocity.x = 0;
+      }
+      
+      // Combina direções diagonais
+      if (keys["w"] && keys["a"]) player1.userData.direction.set(-0.7, 0, -0.7);
+      if (keys["w"] && keys["d"]) player1.userData.direction.set(0.7, 0, -0.7);
+      if (keys["s"] && keys["a"]) player1.userData.direction.set(-0.7, 0, 0.7);
+      if (keys["s"] && keys["d"]) player1.userData.direction.set(0.7, 0, 0.7);
+      
+      if (keys[" "] && player1.userData.onGround) {
+        player1.userData.velocity.y = jumpForce;
+        player1.userData.onGround = false;
+      }
+
+      // Player 2 - Setas + Enter para pular
+      if (keys["ArrowUp"]) {
+        player2.userData.velocity.z = -speed;
+        player2.userData.direction.set(0, 0, -1);
+      } else if (keys["ArrowDown"]) {
+        player2.userData.velocity.z = speed;
+        player2.userData.direction.set(0, 0, 1);
+      } else {
+        player2.userData.velocity.z = 0;
+      }
+      
+      if (keys["ArrowLeft"]) {
+        player2.userData.velocity.x = -speed;
+        player2.userData.direction.set(-1, 0, 0);
+      } else if (keys["ArrowRight"]) {
+        player2.userData.velocity.x = speed;
+        player2.userData.direction.set(1, 0, 0);
+      } else {
+        player2.userData.velocity.x = 0;
+      }
+      
+      // Combina direções diagonais
+      if (keys["ArrowUp"] && keys["ArrowLeft"]) player2.userData.direction.set(-0.7, 0, -0.7);
+      if (keys["ArrowUp"] && keys["ArrowRight"]) player2.userData.direction.set(0.7, 0, -0.7);
+      if (keys["ArrowDown"] && keys["ArrowLeft"]) player2.userData.direction.set(-0.7, 0, 0.7);
+      if (keys["ArrowDown"] && keys["ArrowRight"]) player2.userData.direction.set(0.7, 0, 0.7);
+      
+      if (keys["Enter"] && player2.userData.onGround) {
+        player2.userData.velocity.y = jumpForce;
+        player2.userData.onGround = false;
+      }
+
+      // Aplica gravidade
+      player1.userData.velocity.y -= gravity;
+      player2.userData.velocity.y -= gravity;
+
+      // Atualiza posição dos jogadores
+      const prevPos1 = player1.position.clone();
+      const prevPos2 = player2.position.clone();
+      
+      player1.position.add(player1.userData.velocity.clone().multiplyScalar(delta));
+      player2.position.add(player2.userData.velocity.clone().multiplyScalar(delta));
+
+      // Verifica colisões para cada jogador
+      for (const obj of collidableObjects) {
+        if (obj !== player1 && checkAABBCollision(player1, obj)) {
+          resolvePlayerCollision(player1, obj, delta);
+        }
+        if (obj !== player2 && checkAABBCollision(player2, obj)) {
+          resolvePlayerCollision(player2, obj, delta);
+        }
+      }
+
+      // Rotaciona os jogadores na direção do movimento
+      if (player1.userData.velocity.x !== 0 || player1.userData.velocity.z !== 0) {
+        player1.rotation.y = Math.atan2(player1.userData.direction.x, player1.userData.direction.z);
+      }
+      
+      if (player2.userData.velocity.x !== 0 || player2.userData.velocity.z !== 0) {
+        player2.rotation.y = Math.atan2(player2.userData.direction.x, player2.userData.direction.z);
+      }
+    }
+
+    // Colisão melhorada entre jogadores e bola
+    function checkBallCollision(player, delta) {
+      if (checkAABBCollision(player, ball)) {
+        // Calcula direção do impulso
+        const pushDir = new THREE.Vector3().subVectors(ball.position, player.position).normalize();
+        
+        // Calcula força baseada na velocidade do jogador
+        const playerSpeed = player.userData.velocity.length();
+        const force = 5 + playerSpeed * 0.5;
+        
+        // Aplica força na bola
+        ball.userData.velocity.add(pushDir.multiplyScalar(force));
+        
+        // Adiciona efeito visual de rotação na bola
+        const rotationForce = new THREE.Vector3(
+          -pushDir.z * force * 0.01,
+          0,
+          pushDir.x * force * 0.01
+        );
+        ball.userData.angularVelocity.add(rotationForce);
+      }
+    }
+
+    // Resolver colisão da bola com objetos
+    function resolveBallCollision(object, delta) {
+      if (object === ground) {
+        // Colisão com o chão
+        if (ball.position.y <= 30) {
+          ball.position.y = 30;
+          ball.userData.velocity.y *= -0.7;
+          ball.userData.velocity.x *= 0.9;
+          ball.userData.velocity.z *= 0.9;
+        }
+        return;
+      }
+      
+      // Para outros objetos (casas, obstáculos)
+      const objectSize = object.userData.size;
+      
+      // Calcular sobreposição em cada eixo
+      const dx = (ball.userData.radius + objectSize.x/2) - Math.abs(ball.position.x - object.position.x);
+      const dy = (ball.userData.radius + objectSize.y/2) - Math.abs(ball.position.y - object.position.y);
+      const dz = (ball.userData.radius + objectSize.z/2) - Math.abs(ball.position.z - object.position.z);
+      
+      // Encontrar o eixo de menor penetração
+      if (dx > 0 && dy > 0 && dz > 0) {
+        if (dx < dy && dx < dz) {
+          // Colisão no eixo X
+          if (ball.position.x < object.position.x) {
+            ball.position.x -= dx;
+            ball.userData.velocity.x *= -0.8;
+          } else {
+            ball.position.x += dx;
+            ball.userData.velocity.x *= -0.8;
+          }
+        } else if (dy < dx && dy < dz) {
+          // Colisão no eixo Y
+          if (ball.position.y < object.position.y) {
+            ball.position.y -= dy;
+          } else {
+            ball.position.y += dy;
+          }
+          ball.userData.velocity.y *= -0.8;
+        } else {
+          // Colisão no eixo Z
+          if (ball.position.z < object.position.z) {
+            ball.position.z -= dz;
+            ball.userData.velocity.z *= -0.8;
+          } else {
+            ball.position.z += dz;
+            ball.userData.velocity.z *= -0.8;
+          }
+        }
+      }
+    }
+
+    // Atualizar bola com física melhorada
+    function updateBall(delta) {
+      // Aplica atrito apenas no eixo XZ
+      ball.userData.velocity.x *= 0.98;
+      ball.userData.velocity.z *= 0.98;
+      
+      // Aplica atrito de rotação
+      ball.userData.angularVelocity.multiplyScalar(0.95);
+      
+      // Aplica gravidade à bola
+      ball.userData.velocity.y -= gravity * 0.5;
+      
+      // Salva posição anterior
+      const prevPos = ball.position.clone();
+      
+      // Atualiza posição
+      ball.position.add(ball.userData.velocity.clone().multiplyScalar(delta));
+      
+      // Verifica colisões da bola com todos os objetos
+      for (const obj of collidableObjects) {
+        if (obj !== ball && checkAABBCollision(ball, obj)) {
+          resolveBallCollision(obj, delta);
+        }
+      }
+      
+      // Atualiza rotação
+      ball.rotation.x += ball.userData.angularVelocity.x;
+      ball.rotation.z += ball.userData.angularVelocity.z;
+      
+      // Limites do mapa com efeito de quique
+      const boundary = 900;
+      if (ball.position.x > boundary || ball.position.x < -boundary) {
+        ball.userData.velocity.x *= -0.8;
+        ball.position.x = THREE.MathUtils.clamp(ball.position.x, -boundary, boundary);
+      }
+      if (ball.position.z > boundary || ball.position.z < -boundary) {
+        ball.userData.velocity.z *= -0.8;
+        ball.position.z = THREE.MathUtils.clamp(ball.position.z, -boundary, boundary);
+      }
+    }
+
+    function updateCameras() {
+      // Câmera do Player 1 - estilo Roblox (atrás e acima)
+      const cameraDistance = 50;
+      const cameraHeight = 30;
+      
+      // Calcula a direção para a qual o jogador está olhando
+      const player1Direction = new THREE.Vector3(
+        Math.sin(player1.rotation.y),
+        0,
+        Math.cos(player1.rotation.y)
+      );
+      
+      // Posiciona a câmera atrás e acima do jogador
+      camera1.position.set(
+        player1.position.x - player1Direction.x * cameraDistance,
+        player1.position.y + cameraHeight,
+        player1.position.z - player1Direction.z * cameraDistance
+      );
+      camera1.lookAt(player1.position.x, player1.position.y + 10, player1.position.z);
+
+      // Câmera do Player 2 - estilo Roblox (atrás e acima)
+      const player2Direction = new THREE.Vector3(
+        Math.sin(player2.rotation.y),
+        0,
+        Math.cos(player2.rotation.y)
+      );
+      
+      camera2.position.set(
+        player2.position.x - player2Direction.x * cameraDistance,
+        player2.position.y + cameraHeight,
+        player2.position.z - player2Direction.z * cameraDistance
+      );
+      camera2.lookAt(player2.position.x, player2.position.y + 10, player2.position.z);
+    }
+
+    // Loop com controle de tempo delta
+    let clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      const delta = Math.min(clock.getDelta(), 0.1); // Controla o delta para evitar problemas
+      
+      movePlayers(delta);
+      checkBallCollision(player1, delta);
+      checkBallCollision(player2, delta);
+      updateBall(delta);
+      updateCameras();
+
+      // Render Player 1
+      renderer.setViewport(0, 0, window.innerWidth / 2, window.innerHeight);
+      renderer.setScissor(0, 0, window.innerWidth / 2, window.innerHeight);
+      renderer.setScissorTest(true);
+      renderer.render(scene, camera1);
+
+      // Render Player 2
+      renderer.setViewport(window.innerWidth / 2, 0, window.innerWidth / 2, window.innerHeight);
+      renderer.setScissor(window.innerWidth / 2, 0, window.innerWidth / 2, window.innerHeight);
+      renderer.setScissorTest(true);
+      renderer.render(scene, camera2);
+    }
+    animate();
+
+    // Responsividade
+    window.addEventListener("resize", () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera1.aspect = (window.innerWidth/2) / window.innerHeight;
+      camera2.aspect = (window.innerWidth/2) / window.innerHeight;
+      camera1.updateProjectionMatrix();
+      camera2.updateProjectionMatrix();
+    });
+  </script>
+</body>
+</html>
