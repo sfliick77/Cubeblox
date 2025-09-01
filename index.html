@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Jogo Mundo Aberto - Controles Corrigidos com Rotação</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #87CEEB; /* Ciano para simular dia */ }
+    body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
     .info-panel {
       position: absolute;
@@ -111,23 +111,34 @@
 
     // Cena e renderizador
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB); // Ciano para o fundo
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Luz (aumentada para simular dia)
-    const light = new THREE.DirectionalLight(0xffffff, 1.2);
+    // Adicionar céu estrelado
+    const skyGeometry = new THREE.SphereGeometry(1500, 32, 32);
+    const textureLoader = new THREE.TextureLoader();
+    const skyTexture = textureLoader.load('https://github.com/sfliick77/Background-c-u/raw/main/277fba7bc86484d9f6cf37c87ee44de2.jpg');
+    skyTexture.wrapS = THREE.RepeatWrapping;
+    skyTexture.wrapT = THREE.RepeatWrapping;
+    const skyMaterial = new THREE.MeshBasicMaterial({
+      map: skyTexture,
+      side: THREE.BackSide
+    });
+    const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+    scene.add(sky);
+
+    // Luz
+    const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(50, 100, 50).normalize();
     scene.add(light);
-    scene.add(new THREE.AmbientLight(0x888888)); // Luz ambiente aumentada
+    scene.add(new THREE.AmbientLight(0x555555));
 
     // Mapa
     const groundGeo = new THREE.PlaneGeometry(2000, 2000);
     const groundMat = new THREE.MeshLambertMaterial({ color: 0x228B22 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
     scene.add(ground);
 
     // Jogadores
@@ -141,8 +152,6 @@
     player2.userData.onGround = true;
     player1.userData.direction = new THREE.Vector3(0, 0, -1); // Direção inicial
     player2.userData.direction = new THREE.Vector3(0, 0, -1); // Direção inicial
-    player1.userData.size = new THREE.Vector3(20, 20, 20); // Tamanho para colisão
-    player2.userData.size = new THREE.Vector3(20, 20, 20); // Tamanho para colisão
     scene.add(player1);
     scene.add(player2);
 
@@ -150,8 +159,6 @@
     function criarCasa(x, z) {
       const casa = new THREE.Mesh(new THREE.BoxGeometry(80, 60, 80), new THREE.MeshLambertMaterial({ color: 0x8B4513 }));
       casa.position.set(x, 30, z);
-      casa.userData.size = new THREE.Vector3(80, 60, 80); // Tamanho para colisão
-      casa.userData.isStatic = true; // Marcar como objeto estático
       scene.add(casa);
       return casa;
     }
@@ -166,8 +173,6 @@
     function criarObstaculo(x, z) {
       const obs = new THREE.Mesh(new THREE.BoxGeometry(50, 50, 50), new THREE.MeshLambertMaterial({ color: 0x5555ff }));
       obs.position.set(x, 25, z);
-      obs.userData.size = new THREE.Vector3(50, 50, 50); // Tamanho para colisão
-      obs.userData.isStatic = true; // Marcar como objeto estático
       scene.add(obs);
       return obs;
     }
@@ -183,10 +188,6 @@
     scene.add(ball);
     ball.userData.velocity = new THREE.Vector3(0, 0, 0);
     ball.userData.angularVelocity = new THREE.Vector3(0, 0, 0);
-    ball.userData.radius = 30; // Raio para colisão
-
-    // Lista de todos os objetos com colisão
-    const collidableObjects = [ground, ...casas, ...obstaculos, ball];
 
     // Câmeras - Modificadas para estilo Roblox (atrás e acima)
     const camera1 = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight/2), 0.1, 2000);
@@ -206,110 +207,6 @@
     const speed = 57; // Velocidade aumentada de 5 para 15
     const jumpForce = 50;
     const gravity = 0.8;
-
-    // Sistema de colisão entre dois objetos AABB
-    function checkAABBCollision(obj1, obj2) {
-      const pos1 = obj1.position;
-      const pos2 = obj2.position;
-      
-      // Para objetos com propriedade size (caixas)
-      if (obj1.userData.size && obj2.userData.size) {
-        const size1 = obj1.userData.size;
-        const size2 = obj2.userData.size;
-        
-        return (
-          pos1.x - size1.x/2 < pos2.x + size2.x/2 &&
-          pos1.x + size1.x/2 > pos2.x - size2.x/2 &&
-          pos1.y - size1.y/2 < pos2.y + size2.y/2 &&
-          pos1.y + size1.y/2 > pos2.y - size2.y/2 &&
-          pos1.z - size1.z/2 < pos2.z + size2.z/2 &&
-          pos1.z + size1.z/2 > pos2.z - size2.z/2
-        );
-      }
-      
-      // Para esfera vs caixa (bola vs outros objetos)
-      if (obj1.userData.radius && obj2.userData.size) {
-        const radius = obj1.userData.radius;
-        const size = obj2.userData.size;
-        const boxMin = new THREE.Vector3(
-          pos2.x - size.x/2,
-          pos2.y - size.y/2,
-          pos2.z - size.z/2
-        );
-        const boxMax = new THREE.Vector3(
-          pos2.x + size.x/2,
-          pos2.y + size.y/2,
-          pos2.z + size.z/2
-        );
-        
-        // Encontrar o ponto mais próximo da esfera na caixa
-        const closestPoint = new THREE.Vector3(
-          Math.max(boxMin.x, Math.min(pos1.x, boxMax.x)),
-          Math.max(boxMin.y, Math.min(pos1.y, boxMax.y)),
-          Math.max(boxMin.z, Math.min(pos1.z, boxMax.z))
-        );
-        
-        // Calcular a distância entre o ponto mais próximo e o centro da esfera
-        const distance = closestPoint.distanceTo(pos1);
-        
-        return distance < radius;
-      }
-      
-      return false;
-    }
-
-    // Resolver colisão entre jogador e objetos
-    function resolvePlayerCollision(player, object, delta) {
-      if (object === ground) {
-        // Colisão com o chão
-        if (player.position.y <= 10) {
-          player.position.y = 10;
-          player.userData.velocity.y = 0;
-          player.userData.onGround = true;
-        }
-        return;
-      }
-      
-      // Para outros objetos (casas, obstáculos)
-      const playerSize = player.userData.size;
-      const objectSize = object.userData.size;
-      
-      // Calcular sobreposição em cada eixo
-      const dx = (playerSize.x/2 + objectSize.x/2) - Math.abs(player.position.x - object.position.x);
-      const dy = (playerSize.y/2 + objectSize.y/2) - Math.abs(player.position.y - object.position.y);
-      const dz = (playerSize.z/2 + objectSize.z/2) - Math.abs(player.position.z - object.position.z);
-      
-      // Encontrar o eixo de menor penetração
-      if (dx > 0 && dy > 0 && dz > 0) {
-        if (dx < dy && dx < dz) {
-          // Colisão no eixo X
-          if (player.position.x < object.position.x) {
-            player.position.x -= dx;
-          } else {
-            player.position.x += dx;
-          }
-          player.userData.velocity.x = 0;
-        } else if (dy < dx && dy < dz) {
-          // Colisão no eixo Y
-          if (player.position.y < object.position.y) {
-            player.position.y -= dy;
-            player.userData.velocity.y = 0;
-            if (dy > 0.1) player.userData.onGround = true;
-          } else {
-            player.position.y += dy;
-            player.userData.velocity.y = 0;
-          }
-        } else {
-          // Colisão no eixo Z
-          if (player.position.z < object.position.z) {
-            player.position.z -= dz;
-          } else {
-            player.position.z += dz;
-          }
-          player.userData.velocity.z = 0;
-        }
-      }
-    }
 
     function movePlayers(delta) {
       // Player 1 - WASD + Espaço para pular
@@ -381,21 +278,8 @@
       player2.userData.velocity.y -= gravity;
 
       // Atualiza posição dos jogadores
-      const prevPos1 = player1.position.clone();
-      const prevPos2 = player2.position.clone();
-      
       player1.position.add(player1.userData.velocity.clone().multiplyScalar(delta));
       player2.position.add(player2.userData.velocity.clone().multiplyScalar(delta));
-
-      // Verifica colisões para cada jogador
-      for (const obj of collidableObjects) {
-        if (obj !== player1 && checkAABBCollision(player1, obj)) {
-          resolvePlayerCollision(player1, obj, delta);
-        }
-        if (obj !== player2 && checkAABBCollision(player2, obj)) {
-          resolvePlayerCollision(player2, obj, delta);
-        }
-      }
 
       // Rotaciona os jogadores na direção do movimento
       if (player1.userData.velocity.x !== 0 || player1.userData.velocity.z !== 0) {
@@ -405,11 +289,27 @@
       if (player2.userData.velocity.x !== 0 || player2.userData.velocity.z !== 0) {
         player2.rotation.y = Math.atan2(player2.userData.direction.x, player2.userData.direction.z);
       }
+
+      // Verifica colisão com o chão
+      if (player1.position.y <= 10) {
+        player1.position.y = 10;
+        player1.userData.velocity.y = 0;
+        player1.userData.onGround = true;
+      }
+      
+      if (player2.position.y <= 10) {
+        player2.position.y = 10;
+        player2.userData.velocity.y = 0;
+        player2.userData.onGround = true;
+      }
     }
 
     // Colisão melhorada entre jogadores e bola
     function checkBallCollision(player, delta) {
-      if (checkAABBCollision(player, ball)) {
+      const dist = player.position.distanceTo(ball.position);
+      const combinedRadius = 15 + 30; // Raio do jogador + raio da bola
+      
+      if (dist < combinedRadius) {
         // Calcula direção do impulso
         const pushDir = new THREE.Vector3().subVectors(ball.position, player.position).normalize();
         
@@ -430,59 +330,6 @@
       }
     }
 
-    // Resolver colisão da bola com objetos
-    function resolveBallCollision(object, delta) {
-      if (object === ground) {
-        // Colisão com o chão
-        if (ball.position.y <= 30) {
-          ball.position.y = 30;
-          ball.userData.velocity.y *= -0.7;
-          ball.userData.velocity.x *= 0.9;
-          ball.userData.velocity.z *= 0.9;
-        }
-        return;
-      }
-      
-      // Para outros objetos (casas, obstáculos)
-      const objectSize = object.userData.size;
-      
-      // Calcular sobreposição em cada eixo
-      const dx = (ball.userData.radius + objectSize.x/2) - Math.abs(ball.position.x - object.position.x);
-      const dy = (ball.userData.radius + objectSize.y/2) - Math.abs(ball.position.y - object.position.y);
-      const dz = (ball.userData.radius + objectSize.z/2) - Math.abs(ball.position.z - object.position.z);
-      
-      // Encontrar o eixo de menor penetração
-      if (dx > 0 && dy > 0 && dz > 0) {
-        if (dx < dy && dx < dz) {
-          // Colisão no eixo X
-          if (ball.position.x < object.position.x) {
-            ball.position.x -= dx;
-            ball.userData.velocity.x *= -0.8;
-          } else {
-            ball.position.x += dx;
-            ball.userData.velocity.x *= -0.8;
-          }
-        } else if (dy < dx && dy < dz) {
-          // Colisão no eixo Y
-          if (ball.position.y < object.position.y) {
-            ball.position.y -= dy;
-          } else {
-            ball.position.y += dy;
-          }
-          ball.userData.velocity.y *= -0.8;
-        } else {
-          // Colisão no eixo Z
-          if (ball.position.z < object.position.z) {
-            ball.position.z -= dz;
-            ball.userData.velocity.z *= -0.8;
-          } else {
-            ball.position.z += dz;
-            ball.userData.velocity.z *= -0.8;
-          }
-        }
-      }
-    }
-
     // Atualizar bola com física melhorada
     function updateBall(delta) {
       // Aplica atrito apenas no eixo XZ
@@ -495,22 +342,24 @@
       // Aplica gravidade à bola
       ball.userData.velocity.y -= gravity * 0.5;
       
-      // Salva posição anterior
-      const prevPos = ball.position.clone();
-      
       // Atualiza posição
       ball.position.add(ball.userData.velocity.clone().multiplyScalar(delta));
-      
-      // Verifica colisões da bola com todos os objetos
-      for (const obj of collidableObjects) {
-        if (obj !== ball && checkAABBCollision(ball, obj)) {
-          resolveBallCollision(obj, delta);
-        }
-      }
       
       // Atualiza rotação
       ball.rotation.x += ball.userData.angularVelocity.x;
       ball.rotation.z += ball.userData.angularVelocity.z;
+      
+      // Colisão com o chão
+      if (ball.position.y <= 30) {
+        ball.position.y = 30;
+        
+        // Efeito de quique com perda de energia
+        ball.userData.velocity.y *= -0.7;
+        
+        // Atrito adicional ao tocar o chão
+        ball.userData.velocity.x *= 0.9;
+        ball.userData.velocity.z *= 0.9;
+      }
       
       // Limites do mapa com efeito de quique
       const boundary = 900;
@@ -596,4 +445,4 @@
     });
   </script>
 </body>
-</html>
+</html> 
